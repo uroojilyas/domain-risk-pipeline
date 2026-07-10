@@ -38,5 +38,3 @@ Ensure your Airtable Base has these exact columns:
 | **Risk Score** | Number |
 
 ---
-
-*Note: Make sure to remove your personal API keys from the JSON file before sharing it publicly on GitHub.*
