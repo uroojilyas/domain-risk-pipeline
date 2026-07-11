@@ -1,0 +1,527 @@
+{
+  "name": "Automated Risk Assessment Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Company Verification",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Company Name",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Company URL",
+              "placeholder": "e.g. https://www.google.com"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        -1152,
+        -384
+      ],
+      "id": "c2aeb2c2-7bfb-46c5-a5c1-807318989ce7",
+      "name": "Get User Input",
+      "webhookId": "ac228559-85e9-4efe-b63c-10e9ae9dc1a0"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "931a9efe-b693-4f4b-9bac-d9e3289d575d",
+              "leftValue": "={{ $json['Company URL'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -960,
+        -384
+      ],
+      "id": "aeefeda3-fe04-49d0-a61c-db1214e9a9c3",
+      "name": "Check URL Provided?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b836bfb2-fd81-4d20-8db4-90ca1b1b7c79",
+              "name": "Cleaned_URL",
+              "value": "={{ $json['Company URL'].replace(/^(https?:\\/\\/)?(www\\.)?/, '').replace(/\\/$/, '') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -688,
+        -544
+      ],
+      "id": "8cf96b11-230f-41da-bf4f-6c5975637f8a",
+      "name": "Set User URL"
+    },
+    {
+      "parameters": {
+        "q": "={{ $('Get User Input').item.json['Company Name'] }} official website",
+        "additionalFields": {},
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-serpapi.serpApi",
+      "typeVersion": 1,
+      "position": [
+        -992,
+        -128
+      ],
+      "id": "c701de63-dd76-4a19-825e-bf2ab257a0a9",
+      "name": "Search Google for Domain",
+      "credentials": {
+        "serpApi": {
+          "id": "G8wottjKD3LQI8CQ",
+          "name": "SerpApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Data process karne ke liye\nfor (const item of $input.all()) {\n    // 1. Google search result se URL nikalna\n    // Yeh check karta hai ke organic_results exist karta hai ya nahi\n    const searchResults = item.json.organic_results;\n    \n    if (searchResults && searchResults.length > 0) {\n        // Pehla result ka link uthaya\n        const rawUrl = searchResults[0].link;\n        \n        // 2. Domain extract karna (e.g., https://www.netflix.com/ -> netflix.com)\n    item.json.Cleaned_URL = rawUrl.toString().replace(/^(https?:\\/\\/)?(www\\.)?/, '').split('/')[0];\n    } else {\n        item.json.Final_Domain = \"No_URL_Found\";\n    }\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -816,
+        -128
+      ],
+      "id": "5b598572-4818-4d86-9d8f-881a8415547f",
+      "name": "Extract & Clean Domain"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b836bfb2-fd81-4d20-8db4-90ca1b1b7c79",
+              "name": "Cleaned_URL",
+              "value": "={{ $json.Cleaned_URL }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -688,
+        -352
+      ],
+      "id": "431d6045-eaa5-4c40-8cd4-31fc5ed16162",
+      "name": "Set Found Domain"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {
+          "includeUnpaired": true
+        }
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -432,
+        -464
+      ],
+      "id": "00ad4dff-fa21-4c91-b4fd-84f6cfce568f",
+      "name": "Unify URL Source"
+    },
+    {
+      "parameters": {
+        "url": "=https://rdap.org/domain/{{ $json.Cleaned_URL.replace(/^(https?:\\/\\/)?(www\\.)?/, '').replace(/\\/$/, '') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -208,
+        -464
+      ],
+      "id": "f5b14a73-219b-437a-ac9a-5ffb97454497",
+      "name": "RDAP Domain Lookup",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Data process karne ke liye\nconst item = $input.item.json;\n\n// Safe data handling: Agar 'data' field mein response hai to use karein\n// Agar response body direct mil rahi hai to item.json hi rdap hai\nconst rdap = item.data ? (typeof item.data === 'string' ? JSON.parse(item.data) : item.data) : item;\n\n// --- YAHAN HAIN SAFETY CHECKS ---\n// Agar rdap hi nahi bana, to empty object return kardo taake flow na ruke\nif (!rdap || typeof rdap !== 'object') {\n    return { Registrar_Name: \"Error\", Creation_Date: \"N/A\", Expiry_Date: \"N/A\", Domain_Age_Days: \"N/A\" };\n}\n\n// events aur entities ko safely access karein (agar exist na karein to empty array lein)\nconst events = rdap.events || [];\nconst entities = rdap.entities || [];\n\nconst getEvent = (eventsList, action) => eventsList.find(e => e.eventAction === action) || {};\nconst getRegistrar = (entitiesList) => entitiesList.find(e => e.roles && e.roles.includes('registrar')) || {};\n\nconst registration = getEvent(events, 'registration');\nconst expiration = getEvent(events, 'expiration');\nconst registrar = getRegistrar(entities);\n\n// Age calculation\nlet ageInDays = \"N/A\";\nif (registration.eventDate) {\n    const createdDate = new Date(registration.eventDate);\n    const today = new Date();\n    ageInDays = Math.floor((today - createdDate) / (1000 * 60 * 60 * 24));\n}\n\n// Final output\nreturn {\n  Registrar_Name: (registrar.vcardArray && registrar.vcardArray[1]) ? registrar.vcardArray[1][1][3] : \"N/A\",\n  Creation_Date: registration.eventDate || \"N/A\",\n  Expiry_Date: expiration.eventDate || \"N/A\",\n  Domain_Age_Days: ageInDays\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        -464
+      ],
+      "id": "a1e85f31-e9ad-47df-8772-d0414a39683b",
+      "name": "Format RDAP Output"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a Cyber-Threat Intelligence Analyst. Your task is to evaluate the legitimacy of a company based on the domain registration data provided.\n\nInput Data:\n- Company Name: {{ $('Get User Input').item.json['Company Name'] }}\n- Domain: {{ $('Unify URL Source').item.json.Cleaned_URL }}\n- Registrar: {{ $json.Registrar_Name }}\n- Registration Date: {{ $json.Creation_Date }}\n- Expiry Date: {{ $json.Expiry_Date }}\n- Domain Age (Days): {{ $json.Domain_Age_Days }}\n\nAssessment Criteria:\n1. Domain Age: If Domain Age is < 180 days (6 months), classify as \"High Risk\".\n2. Name Correlation: Analyze if the Domain name logically relates to the Company Name. If there is zero semantic similarity or if the domain looks random, classify as \"Suspicious\".\n3. Registrar Context: If the registrar name is obscure or known for bulk/cheap domain registration, treat it as a minor risk factor.\n4. Handling Missing Data: If a specific data field is missing or null, do not invent information. Rely only on the available fields to form your verdict.\n\nOutput Requirement:\nReturn ONLY a valid JSON object. Do not include any introductory text, markdown code blocks (like ```json), or explanations outside the JSON.\n\n{\n  \"verdict\": \"Legit\" | \"Suspicious\" | \"High Risk\",\n  \"risk_score\": 0,\n  \"analysis\": \"A concise, single-sentence justification for the verdict.\",\n  \"flagged_issues\": [\"list\", \"of\", \"red\", \"flags\"]\n}\n\nConstraints:\n- Be extremely concise in your 'analysis' field (keep it under 20 words).\n- Do not repeat the input data in your output.\n- Avoid any conversational filler; output raw JSON only.",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        -416,
+        -256
+      ],
+      "id": "bef8e4ce-bcde-419e-bcfa-78d63cf657ce",
+      "name": "Basic LLM Chain",
+      "retryOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        -416,
+        -64
+      ],
+      "id": "8557d288-c416-4de3-88de-fec92d634910",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "ZV7wo9IqzL0WBmpD",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "appTmNrTc9ismMKt9",
+          "mode": "list",
+          "cachedResultName": "Job Scam Detector",
+          "cachedResultUrl": "https://airtable.com/appTmNrTc9ismMKt9"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblb2SgFQdOPBNEEF",
+          "mode": "list",
+          "cachedResultName": "Company",
+          "cachedResultUrl": "https://airtable.com/appTmNrTc9ismMKt9/tblb2SgFQdOPBNEEF"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Verdict": "={{ JSON.parse($('Basic LLM Chain').item.json.text).verdict }}",
+            "Risk Score": "={{ JSON.parse($('Basic LLM Chain').item.json.text).risk_score }}",
+            "Analysis": "={{ JSON.parse($('Basic LLM Chain').item.json.text).analysis }}",
+            "Company Name": "={{ $('Get User Input').item.json['Company Name'] }}",
+            "Created Date": "={{ $('Format RDAP Output').item.json.Creation_Date }}",
+            "Expiry Date": "={{ $('Format RDAP Output').item.json.Expiry_Date }}",
+            "Registrar": "={{ $('Format RDAP Output').item.json.Registrar_Name }}",
+            "Company URL": "={{ $('Unify URL Source').item.json.Cleaned_URL }}",
+            "Domain Age in days": "={{ $('Format RDAP Output').item.json.Domain_Age_Days }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Company Name",
+              "displayName": "Company Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Created Date",
+              "displayName": "Created Date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Expiry Date",
+              "displayName": "Expiry Date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Registrar",
+              "displayName": "Registrar",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Company URL",
+              "displayName": "Company URL",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Domain Age in days",
+              "displayName": "Domain Age in days",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Verdict",
+              "displayName": "Verdict",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Risk Score",
+              "displayName": "Risk Score",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Analysis",
+              "displayName": "Analysis",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        -32,
+        -256
+      ],
+      "id": "72f4d7e0-f54f-4f13-bb75-cb97420e9193",
+      "name": "Create a record",
+      "retryOnFail": false,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "eYXZqEKsYEp7UGiX",
+          "name": "Airtable account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Get User Input": {
+      "main": [
+        [
+          {
+            "node": "Check URL Provided?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check URL Provided?": {
+      "main": [
+        [
+          {
+            "node": "Set User URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Search Google for Domain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set User URL": {
+      "main": [
+        [
+          {
+            "node": "Unify URL Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Google for Domain": {
+      "main": [
+        [
+          {
+            "node": "Extract & Clean Domain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract & Clean Domain": {
+      "main": [
+        [
+          {
+            "node": "Set Found Domain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Found Domain": {
+      "main": [
+        [
+          {
+            "node": "Unify URL Source",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Unify URL Source": {
+      "main": [
+        [
+          {
+            "node": "RDAP Domain Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RDAP Domain Lookup": {
+      "main": [
+        [
+          {
+            "node": "Format RDAP Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format RDAP Output": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Create a record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "9775d0b2-0327-4899-8cba-6917865af509",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f55d2a753ac99bf0b4ad6a9c49f3c2ae6f13619f26ad50e302a849f686c1e62e"
+  },
+  "nodeGroups": [],
+  "id": "0DEfOpGvOJN6MnC9",
+  "tags": []
+}
